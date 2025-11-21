@@ -15,6 +15,8 @@ app.use(express.json());
 // Config env
 const PORT = process.env.PORT || 3000;
 const DB_URL = process.env.DATABASE_URL;
+// SHOP_DOMAIN et SHOP_TOKEN ne sont plus utilisés pour les codes,
+// mais on les laisse si tu veux les réutiliser plus tard :
 const SHOP_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOP_TOKEN = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
 
@@ -42,17 +44,18 @@ app.use('/spin', limiter);
  * - "-5%"       : réduction 5%
  * - "-10%"      : réduction 10%
  * - "-20%"      : réduction 20%
- * - "CADEAU1/2" : cadeaux physiques
+ * - "CADEAU1"   : BUBBLE RUSH
+ * - "CADEAU2"   : Extracteur Points Noirs
  *
- * Tu peux ajuster les weight si tu veux plus / moins de chances.
+ * Tu peux ajuster les weight pour modifier les chances.
  */
 const PRIZE_CONFIG = [
   { value: 'nothing', weight: 15 },   // 15% pas de gain
-  { value: '-5%',   weight: 30 },     // 30% -5%
-  { value: '-10%',  weight: 25 },     // 25% -10%
-  { value: '-20%',  weight: 15 },     // 15% -20%
-  { value: 'CADEAU1', weight: 8 },    // 8% Cadeau 1
-  { value: 'CADEAU2', weight: 7 },    // 7% Cadeau 2
+  { value: '-5%',    weight: 30 },   // 30% -5%
+  { value: '-10%',   weight: 25 },   // 25% -10%
+  { value: '-20%',   weight: 15 },   // 15% -20%
+  { value: 'CADEAU1', weight: 8 },   // 8% BUBBLE RUSH
+  { value: 'CADEAU2', weight: 7 },   // 7% Extracteur Points Noirs
 ];
 
 function weightedRandom(list) {
@@ -139,65 +142,14 @@ app.post('/spin', async (req, res) => {
       break;
     } while (!chosen);
 
+    // Codes promo fixes
     let couponCode = null;
-
-    // On NE génère un code QUE pour les réductions %
-    if (chosen.value === '-5%' || chosen.value === '-10%' || chosen.value === '-20%') {
-      // ex : YUNII-5-ABCD1234
-      const percentClean = chosen.value.replace('-', '').replace('%', '');
-      const code = `YUNII-${percentClean}-${uuidv4()
-        .slice(0, 8)
-        .toUpperCase()}`;
-
-      const percentNumber = parseInt(percentClean, 10); // 5 / 10 / 20
-
-      const priceRulePayload = {
-        price_rule: {
-          title: `Jeu-Noel-${percentNumber}-${code}`,
-          target_type: 'line_item',
-          target_selection: 'all',
-          allocation_method: 'across',
-          value_type: 'percentage',
-          value: `-${percentNumber}.0`,
-          once_per_customer: true,
-          usage_limit: 1,
-          starts_at: new Date().toISOString(),
-        },
-      };
-
-      const prRes = await fetch(
-        `https://${SHOP_DOMAIN}/admin/api/2025-01/price_rules.json`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Access-Token': SHOP_TOKEN,
-          },
-          body: JSON.stringify(priceRulePayload),
-        }
-      );
-
-      const prJson = await prRes.json();
-      const priceRuleId = prJson.price_rule && prJson.price_rule.id;
-
-      if (priceRuleId) {
-        const dcRes = await fetch(
-          `https://${SHOP_DOMAIN}/admin/api/2025-01/price_rules/${priceRuleId}/discount_codes.json`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Shopify-Access-Token': SHOP_TOKEN,
-            },
-            body: JSON.stringify({ discount_code: { code } }),
-          }
-        );
-
-        const dcJson = await dcRes.json();
-        if (dcJson.discount_code && dcJson.discount_code.code) {
-          couponCode = dcJson.discount_code.code;
-        }
-      }
+    if (chosen.value === '-5%') {
+      couponCode = 'NOEL5';
+    } else if (chosen.value === '-10%') {
+      couponCode = 'NOEL10';
+    } else if (chosen.value === '-20%') {
+      couponCode = 'NOEL20';
     }
 
     // On log le spin
